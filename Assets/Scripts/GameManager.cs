@@ -9,6 +9,8 @@ public class GameManager : MonoBehaviour
     public Vector3 spawnPoint = new Vector3(0, 0, 0);
     public int startingLives = 3;
     public float fallDeathY = -6f;
+    public int lifeBonusEvery = 100; // every N bones collected -> +1 life
+    public int levelCompleteBonus = 50; // awarded once, on reaching the finish
 
     public AudioClip bonePickupClip;
     public AudioClip bonusPickupClip;
@@ -22,6 +24,7 @@ public class GameManager : MonoBehaviour
     private bool levelComplete = false;
     private bool gameOver = false;
     private Vector3 checkpoint;
+    private int lifeBonusesGranted = 0; // how many lifeBonusEvery-thresholds already rewarded
 
     private AudioSource sfxSource;
     private AudioSource musicSource;
@@ -77,8 +80,27 @@ public class GameManager : MonoBehaviour
     public void AddScore(int amount)
     {
         if (gameOver || levelComplete) return;
-        bones += amount;
+        AddBonesInternal(amount);
         PlaySfx(amount >= 100 ? bonusPickupClip : bonePickupClip);
+    }
+
+    // Adds bones and grants a bonus life every time a new multiple of
+    // lifeBonusEvery is crossed (100 -> +1 life, 200 -> +1 life, etc).
+    private void AddBonesInternal(int amount)
+    {
+        bones += amount;
+
+        if (lifeBonusEvery > 0)
+        {
+            int thresholdsReached = bones / lifeBonusEvery;
+            if (thresholdsReached > lifeBonusesGranted)
+            {
+                int livesToAdd = thresholdsReached - lifeBonusesGranted;
+                lifeBonusesGranted = thresholdsReached;
+                lives += livesToAdd;
+                PlaySfx(lifePickupClip);
+            }
+        }
     }
 
     public void AddLife(int amount)
@@ -107,6 +129,7 @@ public class GameManager : MonoBehaviour
     public void CompleteLevel()
     {
         if (levelComplete || gameOver) return;
+        if (levelCompleteBonus > 0) AddBonesInternal(levelCompleteBonus);
         levelComplete = true;
         PlaySfx(finishClip);
     }

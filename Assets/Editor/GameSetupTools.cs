@@ -391,4 +391,158 @@ public static class GameSetupTools
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
         Debug.Log("Gap variety added: " + floorCount + " safety floors, lethal gaps at index " + lethalA + " (water) and " + lethalB + " (spikes).");
     }
+
+    [MenuItem("Tools/4 Add More Hazards, Enemies and Hit Blocks")]
+    public static void AddMoreChallenges()
+    {
+        GameObject platformsRoot = GameObject.Find("LevelPlatforms");
+        GameObject obstaclesRoot = GameObject.Find("LevelObstacles");
+        GameObject specialsRoot = GameObject.Find("LevelSpecials");
+        if (platformsRoot == null || obstaclesRoot == null)
+        {
+            EditorUtility.DisplayDialog("Level not built", "Пусни първо Tools > 2 Build Level и Tools > 3 Add Gap Variety.", "OK");
+            return;
+        }
+
+        if (GameObject.Find("PatrolEnemy_0") != null || GameObject.Find("HitBlock_0") != null || GameObject.Find("WaterHazard2_6") != null)
+        {
+            EditorUtility.DisplayDialog("Already added",
+                "Изглежда вече е добавено. Изтрий PatrolEnemy_*, HitBlock_*, WaterHazard2_*, SpikeHazard2_* от Hierarchy преди да пуснеш пак.",
+                "OK");
+            return;
+        }
+
+        Material waterMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/WaterMat.mat");
+        Sprite spikeSprite = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/spike.png");
+
+        Material enemyMat = new Material(Shader.Find("Standard"));
+        enemyMat.color = new Color(0.5f, 0.05f, 0.55f); // dark purple
+        AssetDatabase.CreateAsset(enemyMat, "Assets/EnemyMat.mat");
+
+        Material blockMat = new Material(Shader.Find("Standard"));
+        blockMat.color = new Color(0.95f, 0.65f, 0.1f); // orange "brick"
+        AssetDatabase.CreateAsset(blockMat, "Assets/BlockMat.mat");
+
+        GameObject FindFloor(int i)
+        {
+            return GameObject.Find("GapFloor_" + i);
+        }
+
+        void MakeWaterHazard2(int idx, float x, float y, float width)
+        {
+            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            go.name = "WaterHazard2_" + idx;
+            Object.DestroyImmediate(go.GetComponent<BoxCollider>());
+            BoxCollider2D bc = go.AddComponent<BoxCollider2D>();
+            bc.isTrigger = true;
+            go.GetComponent<MeshRenderer>().sharedMaterial = waterMat;
+            go.transform.parent = obstaclesRoot.transform;
+            go.transform.position = new Vector3(x, y, 0f);
+            go.transform.localScale = new Vector3(width, 1.2f, 1f);
+            go.AddComponent<Obstacle>();
+        }
+
+        void MakeSpikeRow2(int idx, float centerX, float width, float topY)
+        {
+            int count = Mathf.Max(1, Mathf.RoundToInt(width / 1.4f));
+            float step = width / count;
+            float startX = centerX - width / 2f + step / 2f;
+            for (int k = 0; k < count; k++)
+            {
+                GameObject s = new GameObject("SpikeHazard2_" + idx + "_" + k);
+                s.transform.parent = obstaclesRoot.transform;
+                float scale = 1.1f;
+                s.transform.position = new Vector3(startX + k * step, topY + (1.4f * scale) / 2f, 0f);
+                s.transform.localScale = new Vector3(scale, scale, 1f);
+                SpriteRenderer sr = s.AddComponent<SpriteRenderer>();
+                sr.sprite = spikeSprite;
+                sr.sortingOrder = 6;
+                BoxCollider2D bc = s.AddComponent<BoxCollider2D>();
+                bc.isTrigger = true;
+                s.AddComponent<Obstacle>();
+            }
+        }
+
+        // 1) Convert 5 existing safety-floor gaps into new lethal hazards
+        int[] toWater = { 6, 16 };
+        int[] toSpikes = { 1, 11, 20 };
+
+        int convertedCount = 0;
+        foreach (int idx in toWater)
+        {
+            GameObject floor = FindFloor(idx);
+            if (floor == null) { Debug.LogWarning("GapFloor_" + idx + " not found, skipping water conversion."); continue; }
+            float x = floor.transform.position.x;
+            float width = floor.transform.localScale.x;
+            Object.DestroyImmediate(floor);
+            MakeWaterHazard2(idx, x, -5.2f, width + 0.1f);
+            convertedCount++;
+        }
+        foreach (int idx in toSpikes)
+        {
+            GameObject floor = FindFloor(idx);
+            if (floor == null) { Debug.LogWarning("GapFloor_" + idx + " not found, skipping spike conversion."); continue; }
+            float x = floor.transform.position.x;
+            float width = floor.transform.localScale.x;
+            Object.DestroyImmediate(floor);
+            MakeSpikeRow2(idx, x, width - 0.2f, -5.6f);
+            convertedCount++;
+        }
+
+        // 2) Add 3 patrol enemies on top of 3 remaining (still-safe) floor gaps
+        int[] enemyFloors = { 3, 9, 18 };
+        int enemyCount = 0;
+        for (int e = 0; e < enemyFloors.Length; e++)
+        {
+            int idx = enemyFloors[e];
+            GameObject floor = FindFloor(idx);
+            if (floor == null) { Debug.LogWarning("GapFloor_" + idx + " not found, skipping enemy."); continue; }
+            float topY = floor.transform.position.y + floor.transform.localScale.y / 2f;
+
+            GameObject en = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            en.name = "PatrolEnemy_" + e;
+            Object.DestroyImmediate(en.GetComponent<BoxCollider>());
+            BoxCollider2D bc = en.AddComponent<BoxCollider2D>();
+            bc.isTrigger = true;
+            en.GetComponent<MeshRenderer>().sharedMaterial = enemyMat;
+            en.transform.parent = obstaclesRoot.transform;
+            en.transform.localScale = new Vector3(0.8f, 0.8f, 1f);
+            en.transform.position = new Vector3(floor.transform.position.x, topY + 0.4f, 0f);
+
+            PatrolEnemy pe = en.AddComponent<PatrolEnemy>();
+            pe.speed = 2f;
+            pe.range = Mathf.Max(0.8f, floor.transform.localScale.x / 2f - 0.6f);
+            enemyCount++;
+        }
+
+        // 3) Add 10 hit blocks above ground segments, spread across the level
+        int[] blockGrounds = { 0, 2, 4, 6, 8, 10, 12, 14, 16, 18 };
+        int blockCount = 0;
+        for (int bIdx = 0; bIdx < blockGrounds.Length; bIdx++)
+        {
+            int gIdx = blockGrounds[bIdx];
+            GameObject ground = GameObject.Find("Ground_" + gIdx);
+            if (ground == null) { Debug.LogWarning("Ground_" + gIdx + " not found, skipping hit block."); continue; }
+            float topY = ground.transform.position.y + ground.transform.localScale.y / 2f;
+
+            GameObject blk = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            blk.name = "HitBlock_" + bIdx;
+            Object.DestroyImmediate(blk.GetComponent<BoxCollider>());
+            BoxCollider2D bbc = blk.AddComponent<BoxCollider2D>();
+            bbc.isTrigger = false;
+            blk.GetComponent<MeshRenderer>().sharedMaterial = blockMat;
+            blk.transform.parent = specialsRoot != null ? specialsRoot.transform : obstaclesRoot.transform;
+            blk.transform.localScale = new Vector3(0.9f, 0.9f, 1f);
+            blk.transform.position = new Vector3(ground.transform.position.x, topY + 2.2f, 0f);
+
+            HitBlock hb = blk.AddComponent<HitBlock>();
+            hb.requiredHits = 10;
+            hb.rewardBones = 10;
+            blockCount++;
+        }
+
+        AssetDatabase.SaveAssets();
+        EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+        Debug.Log("Added: " + convertedCount + " new lethal gaps, " + enemyCount + " patrol enemies, " + blockCount + " hit blocks.");
+    }
 }
